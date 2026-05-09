@@ -8,7 +8,7 @@ import (
 )
 
 type Config struct {
-	AppPort  string `env:"APP_PORT" env-default:"8082"`
+	AppPort  string `env:"APP_PORT" env-default:"8080"`
 	LogLevel string `env:"LOG_LEVEL" env-default:"info"`
 	KafkaURL string `env:"KAFKA_URL" env-default:"localhost:9092"`
 	Topic    string `env:"KAFKA_TOPIC" env-default:"ax-telemetry"`

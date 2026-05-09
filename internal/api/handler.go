@@ -53,7 +53,27 @@ func (h *Handler) Ingest(c *fiber.Ctx) error {
 		}
 	}
 
-	payload.TenantID = c.Locals("tenantID").(string)
+	// ==========================================
+	// 🚨 FIX: Safe Context Extraction (Panic-Proof)
+	// ==========================================
+	tenantLocal := c.Locals("tenantSlug")
+	if tenantLocal == nil {
+		config.Logger.Error("CRITICAL: tenantSlug missing from request context. Did the middleware run?")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Internal infrastructure error: Missing context",
+		})
+	}
+
+	tenantSlug, ok := tenantLocal.(string)
+	if !ok {
+		config.Logger.Error("CRITICAL: tenantSlug in context is not a string")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Internal infrastructure error: Invalid context type",
+		})
+	}
+
+	// Map the extracted slug to the payload (assuming your struct still calls it TenantID for now)
+	payload.TenantID = tenantSlug
 
 	if err := h.producer.Publish(c.UserContext(), payload); err != nil {
 		config.Logger.Error("Failed to publish to producer", zap.Error(err))
@@ -62,7 +82,7 @@ func (h *Handler) Ingest(c *fiber.Ctx) error {
 
 	config.Logger.Info("Telemetry event queued",
 		zap.String("trace_id", payload.TraceID),
-		zap.String("tenant_id", payload.TenantID),
+		zap.String("tenant_slug", payload.TenantID),
 		zap.String("tool_name", payload.ToolName),
 		zap.Int("payload_size", payload.PayloadSize),
 	)
@@ -87,14 +107,32 @@ func (h *Handler) IngestBatch(c *fiber.Ctx) error {
 		})
 	}
 
-	tenantID := c.Locals("tenantID").(string)
+	// ==========================================
+	// 🚨 FIX: Safe Context Extraction for Batch
+	// ==========================================
+	tenantLocal := c.Locals("tenantSlug")
+	if tenantLocal == nil {
+		config.Logger.Error("CRITICAL: tenantSlug missing from request context in batch.")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Internal infrastructure error: Missing context",
+		})
+	}
+
+	tenantSlug, ok := tenantLocal.(string)
+	if !ok {
+		config.Logger.Error("CRITICAL: tenantSlug in context is not a string in batch.")
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Internal infrastructure error: Invalid context type",
+		})
+	}
+
 	now := time.Now()
 	queuedCount := 0
 
 	// Loop through the events and send them to Kafka
 	for _, event := range batch.Events {
 		event.Timestamp = now
-		event.TenantID = tenantID
+		event.TenantID = tenantSlug
 
 		if event.TraceID == "" {
 			event.TraceID = uuid.New().String()
@@ -108,7 +146,7 @@ func (h *Handler) IngestBatch(c *fiber.Ctx) error {
 	}
 
 	config.Logger.Info("Telemetry batch processed",
-		zap.String("tenant_id", tenantID),
+		zap.String("tenant_slug", tenantSlug),
 		zap.Int("events_received", len(batch.Events)),
 		zap.Int("events_queued", queuedCount),
 	)
