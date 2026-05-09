@@ -24,7 +24,7 @@ type Handler struct {
 func NewHandler(producer TelemetryProducer) *Handler {
 	return &Handler{
 		producer:  producer,
-		validator: validator.New(), // Initialize struct validator
+		validator: validator.New(),
 	}
 }
 
@@ -44,13 +44,11 @@ func (h *Handler) Ingest(c *fiber.Ctx) error {
 
 	payload.Timestamp = time.Now()
 
-	// 🚨 ENTERPRISE UPGRADE: Generate a UUID if missing
 	if payload.TraceID == "" {
 		traceHeader := c.Get("X-Trace-ID")
 		if traceHeader != "" {
 			payload.TraceID = traceHeader
 		} else {
-			// Generate a brand new v4 UUID for this request
 			payload.TraceID = uuid.New().String()
 		}
 	}
@@ -71,6 +69,52 @@ func (h *Handler) Ingest(c *fiber.Ctx) error {
 
 	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
 		"message": "Event queued",
-		"traceId": payload.TraceID, // Now this will always return a valid UUID
+		"traceId": payload.TraceID,
+	})
+}
+
+func (h *Handler) IngestBatch(c *fiber.Ctx) error {
+	var batch models.BatchRequest
+
+	if err := c.BodyParser(&batch); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Malformed JSON batch payload"})
+	}
+
+	if err := h.validator.Struct(batch); err != nil {
+		config.Logger.Warn("Invalid batch payload rejected", zap.Error(err))
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Validation failed: " + err.Error(),
+		})
+	}
+
+	tenantID := c.Locals("tenantID").(string)
+	now := time.Now()
+	queuedCount := 0
+
+	// Loop through the events and send them to Kafka
+	for _, event := range batch.Events {
+		event.Timestamp = now
+		event.TenantID = tenantID
+
+		if event.TraceID == "" {
+			event.TraceID = uuid.New().String()
+		}
+
+		if err := h.producer.Publish(c.UserContext(), event); err != nil {
+			config.Logger.Error("Failed to publish event from batch", zap.Error(err), zap.String("trace_id", event.TraceID))
+			continue
+		}
+		queuedCount++
+	}
+
+	config.Logger.Info("Telemetry batch processed",
+		zap.String("tenant_id", tenantID),
+		zap.Int("events_received", len(batch.Events)),
+		zap.Int("events_queued", queuedCount),
+	)
+
+	return c.Status(fiber.StatusAccepted).JSON(fiber.Map{
+		"message": "Batch queued",
+		"count":   queuedCount,
 	})
 }

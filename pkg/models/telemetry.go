@@ -11,6 +11,11 @@ type TelemetryPayload struct {
 	PayloadSize int       `json:"payload_size" validate:"gte=0"`
 	Status      string    `json:"status" validate:"required,oneof=SUCCESS ERROR HALLUCINATION"`
 	Timestamp   time.Time `json:"timestamp"`
+	DurationMs  int       `json:"durationMs"`
 	RawRequest  string    `json:"raw_request,omitempty"`
 	RawResponse string    `json:"raw_response,omitempty"`
+}
+
+type BatchRequest struct {
+	Events []TelemetryPayload `json:"events" validate:"required,dive"`
 }

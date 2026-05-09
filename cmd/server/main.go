@@ -69,6 +69,8 @@ func main() {
 	// 🚨 INJECT REDIS INTO THE MIDDLEWARE HERE
 	v1.Post("/ingest", apiLimiter, api.AuthMiddleware(rdb), handler.Ingest)
 
+	v1.Post("/ingest/batch", apiLimiter, api.AuthMiddleware(rdb), handler.IngestBatch)
+
 	go func() {
 		config.Logger.Info("Starting server", zap.String("port", cfg.AppPort))
 		if err := app.Listen(":" + cfg.AppPort); err != nil {
