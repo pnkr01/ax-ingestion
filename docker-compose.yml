@@ -38,3 +38,18 @@ services:
         hard: 262144
     depends_on:
       - kafka
+  postgres:
+    image: postgres:15-alpine
+    container_name: ax-postgres
+    environment:
+      POSTGRES_USER: ax_admin
+      POSTGRES_PASSWORD: ax_password
+      POSTGRES_DB: ax_management
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # Make sure to add the volume at the very bottom of the file if it's not there:
+volumes:
+  pgdata:
